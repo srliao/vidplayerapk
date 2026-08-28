@@ -31,8 +31,12 @@ jobs:
           if [ -n "$KEYSTORE_P12_BASE64" ]; then
             echo "$KEYSTORE_P12_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
             echo "KEYSTORE_PATH=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
+            echo "ARTIFACT_NAME=kiosk-player-release-signed" >> "$GITHUB_ENV"
           else
             echo "No signing secret present; falling back to debug signing."
+            # Name the artifact for what it is: installing a debug-signed build
+            # over a release-signed one fails with a signature mismatch.
+            echo "ARTIFACT_NAME=kiosk-player-debug-signed" >> "$GITHUB_ENV"
           fi
 
       - name: Build release APK
@@ -44,6 +48,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: kiosk-player
+          name: ${{ env.ARTIFACT_NAME }}
           path: app/build/outputs/apk/release/*.apk
           retention-days: 14

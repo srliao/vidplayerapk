@@ -80,8 +80,9 @@ because of libVLC's bundled components — see [NOTICE.md](NOTICE.md).
 
 ## Development
 
-CI-only: there is no local Android toolchain in this project's workflow. Push
-and read the Actions log. All playback decision logic lives in
+Build and test locally with JDK 17 and the Android SDK — `./gradlew test` and
+`./gradlew :app:assembleDebug` are the primary verifiers; CI repeats them on
+every push as confirmation. All playback decision logic lives in
 `app/src/main/java/io/github/srliao/kioskplayer/core/`, has no Android or VLC
 imports, and is covered by JVM unit tests — that is what substitutes for a
 debugger.
