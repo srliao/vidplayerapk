@@ -153,6 +153,161 @@ class PlaybackControllerTest {
         assertEquals(2_000L, step.ticks().single().delayMs)
     }
 
+    @Test
+    fun `a silent stall tears down exactly once, not once per sample`() {
+        val c = playing()
+        var t = 100L
+        val teardowns = mutableListOf<Int>()
+        repeat(4) {
+            t += 10_000
+            teardowns += c.step(Input.Tick(t, sample(at = t, decoded = 500))).teardowns().size
+        }
+        assertEquals(listOf(0, 0, 0, 1), teardowns)
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+        assertEquals(1, c.reconnectCount)
+    }
+
+    @Test
+    fun `advancing frames never trigger a stall`() {
+        val c = playing()
+        var t = 100L
+        var decoded = 0
+        repeat(20) {
+            t += 10_000
+            decoded += 250
+            c.step(Input.Tick(t, sample(at = t, decoded = decoded)))
+        }
+        assertEquals(PlaybackState.Playing, c.playbackState)
+    }
+
+    @Test
+    fun `connecting times out after fifteen seconds with no frames`() {
+        val c = PlaybackController()
+        c.step(Input.SurfaceReady(0))
+        c.step(Input.StreamSelected(0, cam))
+
+        c.step(Input.Tick(14_000, sample(at = 14_000, decoded = 0)))
+        assertEquals(PlaybackState.Connecting, c.playbackState)
+
+        val step = c.step(Input.Tick(15_000, sample(at = 15_000, decoded = 0)))
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+        assertEquals(1, step.teardowns().size)
+    }
+
+    @Test
+    fun `a retry is deferred while the network is reported down`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(1_000, available = false))
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+
+        val step = c.step(Input.Tick(7_000, null))          // backoff has elapsed
+        assertTrue(step.connects().isEmpty())
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+        assertEquals(listOf(5_000L), step.ticks().map { it.delayMs })
+    }
+
+    @Test
+    fun `the network coming back triggers an attempt within half a second`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(1_000, available = false))
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+        c.step(Input.Tick(7_000, null))                      // deferred
+
+        val up = c.step(Input.NetworkChanged(20_000, available = true))
+        assertEquals(listOf(500L), up.ticks().map { it.delayMs })
+
+        val step = c.step(Input.Tick(20_500, null))
+        assertEquals(listOf("rtsps://h/a"), step.connects().map { it.url })
+    }
+
+    @Test
+    fun `the failsafe attempts anyway after sixty seconds of reported-down`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(1_000, available = false))
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+
+        c.step(Input.Tick(30_000, null))
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+
+        val step = c.step(Input.Tick(61_001, null))          // 60s after down at 1_000
+        assertEquals(listOf("rtsps://h/a"), step.connects().map { it.url })
+    }
+
+    @Test
+    fun `a reported-up network never suppresses the stall watchdog`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(100, available = true))
+        var t = 100L
+        repeat(4) {
+            t += 10_000
+            c.step(Input.Tick(t, sample(at = t, decoded = 500)))
+        }
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+    }
+
+    @Test
+    fun `switching streams mid-backoff cancels the retry and resets the ladder`() {
+        val other = StreamEntry("b", "Driveway", "rtsps://h/b")
+        val c = playing()
+        var t = 5_000L
+        repeat(3) {
+            c.step(Input.Vlc(t, VlcEventKind.EncounteredError))
+            t += 40_000                                   // well past any backoff
+            c.step(Input.Tick(t, null))                   // retry fires
+            t += 1_000
+        }
+
+        val step = c.step(Input.StreamSelected(t, other))
+        assertEquals(listOf("rtsps://h/b"), step.connects().map { it.url })
+        assertEquals(PlaybackState.Connecting, c.playbackState)
+
+        val fail = c.step(Input.Vlc(t + 1_000, VlcEventKind.EncounteredError))
+        assertEquals(2_000L, fail.ticks().single().delayMs)   // ladder was reset
+    }
+
+    @Test
+    fun `surface loss suspends and surface return reconnects`() {
+        val c = playing()
+        val gone = c.step(Input.SurfaceGone(5_000))
+        assertEquals(PlaybackState.Suspended, c.playbackState)
+        assertEquals(1, gone.teardowns().size)
+
+        val back = c.step(Input.SurfaceReady(9_000))
+        assertEquals(PlaybackState.Connecting, c.playbackState)
+        assertEquals(listOf("rtsps://h/a"), back.connects().map { it.url })
+    }
+
+    @Test
+    fun `surface loss during backoff cancels cleanly`() {
+        val c = playing()
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+        c.step(Input.SurfaceGone(5_500))
+        assertEquals(PlaybackState.Suspended, c.playbackState)
+
+        val tick = c.step(Input.Tick(8_000, null))
+        assertTrue(tick.connects().isEmpty())
+    }
+
+    @Test
+    fun `selecting no stream tears down and goes idle`() {
+        val c = playing()
+        val step = c.step(Input.StreamSelected(5_000, null))
+        assertEquals(PlaybackState.Idle, c.playbackState)
+        assertEquals(1, step.teardowns().size)
+        assertEquals(UiState.NoStream, step.ui)
+    }
+
+    @Test
+    fun `a second failure event while reconnecting is ignored`() {
+        val c = playing()
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+        val step = c.step(Input.Vlc(5_001, VlcEventKind.EndReached))
+
+        assertTrue(step.commands.isEmpty())
+        assertEquals(1, c.reconnectCount)
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+    }
+
     private fun sample(at: Long, decoded: Int, playing: Boolean = true) = HealthSample(
         atMs = at,
         decodedVideo = decoded,

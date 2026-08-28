@@ -46,6 +46,9 @@ class PlaybackController(
     private val connectingTickMs: Long = 2_000,
     private val playingTickMs: Long = 10_000,
     private val healthyResetMs: Long = 60_000,
+    private val networkDeferTickMs: Long = 5_000,
+    private val networkDownFailsafeMs: Long = 60_000,
+    private val networkUpDelayMs: Long = 500,
     private val backoff: Backoff = Backoff(),
     private val stalls: StallDetector = StallDetector(),
 ) {
@@ -70,6 +73,8 @@ class PlaybackController(
     private var retryAtMs = 0L
     private var lastError: String? = null
     private var lastNowMs = 0L
+    private var networkAvailable = true
+    private var networkDownSinceMs: Long? = null
 
     fun step(input: Input): Step {
         lastNowMs = input.nowMs
@@ -113,10 +118,22 @@ class PlaybackController(
         return Step(cmds, ui())
     }
 
-    // Task 5 replaces this body with real network handling.
     private fun handleNetwork(input: Input.NetworkChanged, cmds: MutableList<Command>) {
-        log(cmds, input.nowMs, LogLevel.INFO,
-            "network ${if (input.available) "up" else "down"}")
+        val changed = networkAvailable != input.available
+        networkAvailable = input.available
+        networkDownSinceMs = if (input.available) null else (networkDownSinceMs ?: input.nowMs)
+
+        if (changed) {
+            log(cmds, input.nowMs, LogLevel.INFO,
+                "network ${if (input.available) "up" else "down"}")
+        }
+
+        // Bringing the retry forward is what meets the 30-second recovery target
+        // after a router reboot.
+        if (input.available && playbackState == PlaybackState.Reconnecting) {
+            retryAtMs = input.nowMs + networkUpDelayMs
+            cmds += Command.ScheduleTick(networkUpDelayMs)
+        }
     }
 
     private fun startOrPark(nowMs: Long, cmds: MutableList<Command>) {
@@ -209,6 +226,21 @@ class PlaybackController(
                     cmds += Command.ScheduleTick(retryAtMs - input.nowMs)
                     return
                 }
+
+                // Connectivity callbacks lie in both directions. Deferring while
+                // down keeps the log readable; the failsafe means a callback that
+                // never fires cannot strand the panel offline forever.
+                val downForMs = networkDownSinceMs?.let { input.nowMs - it } ?: 0L
+                if (!networkAvailable && downForMs < networkDownFailsafeMs) {
+                    log(cmds, input.nowMs, LogLevel.INFO, "network down, deferring retry")
+                    cmds += Command.ScheduleTick(networkDeferTickMs)
+                    return
+                }
+                if (!networkAvailable) {
+                    log(cmds, input.nowMs, LogLevel.WARN,
+                        "network still reported down after ${downForMs}ms, attempting anyway")
+                }
+
                 val s = stream
                 if (s == null) playbackState = PlaybackState.Idle else connect(s, input.nowMs, cmds)
             }
