@@ -6,6 +6,23 @@
 
     <application
         android:name=".KioskApp"
-        android:label="Camera"/>
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Kiosk">
+
+        <activity
+            android:name=".PlayerActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".SetupActivity" android:exported="false"/>
+        <activity android:name=".DiagnosticsActivity" android:exported="false"/>
+    </application>
 
 </manifest>
