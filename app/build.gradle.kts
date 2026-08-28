@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "io.github.srliao.kioskplayer"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.srliao.kioskplayer"
