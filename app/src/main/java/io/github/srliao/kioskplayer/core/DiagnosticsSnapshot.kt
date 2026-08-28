@@ -22,7 +22,7 @@ data class DiagnosticsSnapshot(
     fun toJson(): String = JSON.encodeToString(this)
 
     companion object {
-        private val JSON = Json { prettyPrint = true }
+        private val JSON = Json { prettyPrint = true; allowSpecialFloatingPointValues = true }
 
         val EMPTY = DiagnosticsSnapshot(
             state = "Idle",

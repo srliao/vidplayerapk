@@ -40,10 +40,14 @@ class DiagnosticsServer(
                 }
                 try {
                     client.use(::respond)
-                } catch (e: IOException) {
+                } catch (e: Throwable) {
                     // A stalled or misbehaving client (including a read
                     // timeout from soTimeout) must not kill the accept loop -
-                    // just drop this connection and move on.
+                    // just drop this connection and move on. Deliberately wider
+                    // than IOException: snapshot() can throw a
+                    // SerializationException, and letting that escape would
+                    // silently kill this thread for the rest of the session
+                    // with running still true.
                 }
             }
         }.apply {

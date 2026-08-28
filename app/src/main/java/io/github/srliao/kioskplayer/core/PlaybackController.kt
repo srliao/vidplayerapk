@@ -64,8 +64,15 @@ class PlaybackController(
     var lastSample: HealthSample? = null
         private set
 
+    // Only meaningful while Reconnecting. retryAtMs is not cleared when a retry
+    // is abandoned, so reporting it unconditionally served a stale countdown on
+    // /stats while the stream was live.
     val backoffMs: Long
-        get() = (retryAtMs - lastNowMs).coerceAtLeast(0)
+        get() = if (playbackState == PlaybackState.Reconnecting) {
+            (retryAtMs - lastNowMs).coerceAtLeast(0)
+        } else {
+            0
+        }
 
     private var surfaceReady = false
     private var connectStartedAtMs = 0L
@@ -233,6 +240,10 @@ class PlaybackController(
                 val downForMs = networkDownSinceMs?.let { input.nowMs - it } ?: 0L
                 if (!networkAvailable && downForMs < networkDownFailsafeMs) {
                     log(cmds, input.nowMs, LogLevel.INFO, "network down, deferring retry")
+                    // Move retryAtMs to the deferral poll so the panel shows a
+                    // real countdown instead of "retrying in 0s" for the whole
+                    // outage. A network-up edge still overrides this.
+                    retryAtMs = input.nowMs + networkDeferTickMs
                     cmds += Command.ScheduleTick(networkDeferTickMs)
                     return
                 }

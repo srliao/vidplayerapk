@@ -22,6 +22,19 @@ class PlaybackControllerTest {
     private fun Step.teardowns() = commands.filterIsInstance<Command.Teardown>()
     private fun Step.ticks() = commands.filterIsInstance<Command.ScheduleTick>()
 
+    /**
+     * Just the media-lifecycle commands, in order. Every Connect must be
+     * immediately preceded by a Teardown: without it VlcHost overwrites its
+     * Media reference and leaks one native Media per reconnect.
+     */
+    private fun Step.lifecycle() = commands.mapNotNull {
+        when (it) {
+            is Command.Teardown -> "teardown"
+            is Command.Connect -> "connect ${it.url}"
+            else -> null
+        }
+    }
+
     @Test
     fun `starts idle with no stream`() {
         val c = PlaybackController()
@@ -107,6 +120,22 @@ class PlaybackControllerTest {
 
         assertEquals(PlaybackState.Connecting, c.playbackState)
         assertEquals(listOf("rtsps://h/a"), step.connects().map { it.url })
+    }
+
+    @Test
+    fun `the initial connect tears down before it connects`() {
+        val c = PlaybackController()
+        c.step(Input.SurfaceReady(0))
+        val step = c.step(Input.StreamSelected(0, cam))
+        assertEquals(listOf("teardown", "connect rtsps://h/a"), step.lifecycle())
+    }
+
+    @Test
+    fun `the retry tick tears down before it reconnects`() {
+        val c = playing()
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+        val step = c.step(Input.Tick(7_000, null))
+        assertEquals(listOf("teardown", "connect rtsps://h/a"), step.lifecycle())
     }
 
     @Test

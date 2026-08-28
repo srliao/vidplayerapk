@@ -66,8 +66,10 @@ class VlcHost(
                 // Log only. An error *dialog* is not necessarily a playback
                 // failure, and MediaPlayer.Event.EncounteredError already covers
                 // the real ones - dispatching here too would double-teardown.
+                // Deliberately fixed text: the title comes from libVLC, and this
+                // buffer is published unauthenticated over HTTP.
                 diagnostics.add(
-                    LogEvent(now(), LogLevel.ERROR, "vlc", "dialog: ${dialog.title}")
+                    LogEvent(now(), LogLevel.ERROR, "vlc", "libvlc reported an error dialog")
                 )
             }
 
@@ -145,7 +147,7 @@ class VlcHost(
             decodedVideo = stats.decodedVideo,
             displayedPictures = stats.displayedPictures,
             demuxReadBytes = stats.demuxReadBytes,
-            inputBitrate = stats.inputBitrate,
+            inputBitrate = stats.inputBitrate.takeIf { it.isFinite() } ?: 0f,
             isPlaying = player.isPlaying,
             vlcTimeMs = player.time,
         )

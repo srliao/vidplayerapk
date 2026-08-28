@@ -63,6 +63,16 @@ class StallDetectorTest {
     }
 
     @Test
+    fun `a pause clears stalls accumulated before it`() {
+        val d = StallDetector()
+        d.update(sample(100)); d.update(sample(100)); d.update(sample(100))
+        assertEquals(2, d.consecutiveStalls)
+        d.update(sample(100, playing = false))
+        assertEquals(0, d.consecutiveStalls)
+        assertFalse(d.update(sample(100)))
+    }
+
+    @Test
     fun `a wedged decoder still stalls even while bytes keep arriving`() {
         val d = StallDetector()
         d.update(sample(100, demux = 1_000))

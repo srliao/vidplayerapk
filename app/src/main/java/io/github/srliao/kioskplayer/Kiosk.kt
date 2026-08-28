@@ -65,8 +65,12 @@ class Kiosk(appContext: Context) {
     }
 
     fun attach(layout: VLCVideoLayout) {
-        vlc.attach(layout)
+        // play() first: surfaceReady is still false, so the controller parks in
+        // Suspended and emits nothing. The SurfaceReady from attach() then drives
+        // a single connect - and still after attachViews(), so surface ordering
+        // is preserved. Calling attach() first would connect twice per screen-on.
         play()
+        vlc.attach(layout)
     }
 
     fun detach() = vlc.detach()
