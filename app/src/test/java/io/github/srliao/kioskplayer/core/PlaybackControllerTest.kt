@@ -236,11 +236,11 @@ class PlaybackControllerTest {
     @Test
     fun `a reported-up network never suppresses the stall watchdog`() {
         val c = playing()
-        c.step(Input.NetworkChanged(100, available = true))
         var t = 100L
         repeat(4) {
             t += 10_000
             c.step(Input.Tick(t, sample(at = t, decoded = 500)))
+            c.step(Input.NetworkChanged(t, available = true))
         }
         assertEquals(PlaybackState.Reconnecting, c.playbackState)
     }
@@ -306,6 +306,37 @@ class PlaybackControllerTest {
         assertTrue(step.commands.isEmpty())
         assertEquals(1, c.reconnectCount)
         assertEquals(PlaybackState.Reconnecting, c.playbackState)
+    }
+
+    @Test
+    fun `a redundant network-up event does not shortcut the ladder`() {
+        val c = playing()
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))          // retryAt = 7_000
+        val step = c.step(Input.NetworkChanged(5_500, available = true)) // already up: no-op
+        assertTrue(step.commands.isEmpty())
+
+        val tick = c.step(Input.Tick(6_100, null))
+        assertTrue(tick.connects().isEmpty())
+        assertEquals(PlaybackState.Reconnecting, c.playbackState)
+    }
+
+    @Test
+    fun `a repeated down report does not reset the failsafe origin`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(1_000, available = false))
+        c.step(Input.Vlc(5_000, VlcEventKind.EncounteredError))
+        c.step(Input.NetworkChanged(55_000, available = false))          // still down, re-reported
+
+        val step = c.step(Input.Tick(61_001, null))                      // 60s past the 1_000 origin
+        assertEquals(listOf("rtsps://h/a"), step.connects().map { it.url })
+    }
+
+    @Test
+    fun `network events while playing do not reschedule the health tick`() {
+        val c = playing()
+        c.step(Input.NetworkChanged(4_000, available = false))
+        val step = c.step(Input.NetworkChanged(5_000, available = true))
+        assertTrue(step.ticks().isEmpty())
     }
 
     private fun sample(at: Long, decoded: Int, playing: Boolean = true) = HealthSample(

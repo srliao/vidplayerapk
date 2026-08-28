@@ -130,7 +130,7 @@ class PlaybackController(
 
         // Bringing the retry forward is what meets the 30-second recovery target
         // after a router reboot.
-        if (input.available && playbackState == PlaybackState.Reconnecting) {
+        if (changed && input.available && playbackState == PlaybackState.Reconnecting) {
             retryAtMs = input.nowMs + networkUpDelayMs
             cmds += Command.ScheduleTick(networkUpDelayMs)
         }
