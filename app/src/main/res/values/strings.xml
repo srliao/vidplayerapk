@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Camera</string>
+    <string name="btn_next">Next</string>
+    <string name="btn_setup">Setup</string>
+    <string name="btn_diag">Diag</string>
+    <string name="btn_add">Add</string>
+    <string name="btn_paste">Paste</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_delete">X</string>
+    <string name="no_stream">No stream configured — tap Setup</string>
+    <string name="hint_name">Name (optional)</string>
+    <string name="hint_url">rtsps://host:7441/stream</string>
+    <string name="label_streams">Streams</string>
+    <string name="label_add_stream">Add stream</string>
+    <string name="clipboard_empty">Clipboard is empty</string>
+</resources>
