@@ -1,0 +1,19 @@
+[versions]
+agp = "8.13.2"
+kotlin = "2.2.21"
+appcompat = "1.8.0"
+libvlc = "3.7.5"
+serialization = "1.11.0"
+junit = "4.13.2"
+
+[libraries]
+appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+libvlc = { module = "org.videolan.android:libvlc-all", version.ref = "libvlc" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+junit = { module = "junit:junit", version.ref = "junit" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
