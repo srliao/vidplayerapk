@@ -8,6 +8,7 @@ import io.github.srliao.kioskplayer.core.StreamList
 import io.github.srliao.kioskplayer.core.UiState
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+import org.videolan.libvlc.util.VLCVideoLayout
 
 /**
  * The singleton object graph. Owns the stream list and the diagnostics
@@ -19,6 +20,13 @@ class Kiosk(appContext: Context) {
 
     private val store = StreamStore(appContext)
     private val snapshotRef = AtomicReference(DiagnosticsSnapshot.EMPTY)
+
+    private val vlc = VlcHost(
+        context = appContext,
+        diagnostics = diagnostics,
+        onUiState = { state -> onUiState?.invoke(state) },
+        onSnapshot = { snapshot -> snapshotRef.set(snapshot) },
+    )
 
     var onUiState: ((UiState) -> Unit)? = null
 
@@ -56,6 +64,14 @@ class Kiosk(appContext: Context) {
         store.save(list)
     }
 
-    /** Replaced in Task 7 with a call into VlcHost. */
-    private fun play() = Unit
+    fun attach(layout: VLCVideoLayout) {
+        vlc.attach(layout)
+        play()
+    }
+
+    fun detach() = vlc.detach()
+
+    fun onNetworkChanged(available: Boolean) = vlc.onNetworkChanged(available)
+
+    private fun play() = vlc.select(streams.current)
 }
