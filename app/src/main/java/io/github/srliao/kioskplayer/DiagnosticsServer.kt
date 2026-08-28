@@ -1,6 +1,7 @@
 package io.github.srliao.kioskplayer
 
 import java.io.IOException
+import java.io.InputStream
 import java.net.ServerSocket
 import java.net.Socket
 
@@ -21,15 +22,28 @@ class DiagnosticsServer(
 
     fun start() {
         if (running) return
-        running = true
         val socket = ServerSocket(port)
         serverSocket = socket
+        running = true
         thread = Thread {
             while (running) {
-                try {
-                    socket.accept().use(::respond)
+                val client = try {
+                    socket.accept()
                 } catch (e: IOException) {
-                    if (!running) break
+                    // An intentional stop() closes the socket to break accept().
+                    if (!running || socket.isClosed) break
+                    // Anything else may be transient (e.g. descriptor exhaustion).
+                    // Back off so a persistent failure cannot pin a core on a
+                    // battery-powered panel.
+                    runCatching { Thread.sleep(ACCEPT_RETRY_DELAY_MS) }
+                    continue
+                }
+                try {
+                    client.use(::respond)
+                } catch (e: IOException) {
+                    // A stalled or misbehaving client (including a read
+                    // timeout from soTimeout) must not kill the accept loop -
+                    // just drop this connection and move on.
                 }
             }
         }.apply {
@@ -47,7 +61,9 @@ class DiagnosticsServer(
     }
 
     private fun respond(socket: Socket) {
-        val requestLine = socket.getInputStream().bufferedReader().readLine() ?: return
+        // A stalled client must not wedge this single-threaded endpoint.
+        socket.soTimeout = REQUEST_TIMEOUT_MS
+        val requestLine = readRequestLine(socket.getInputStream()) ?: return
         val ok = requestLine.startsWith("GET /stats")
         val body = if (ok) snapshot() else """{"error":"not found"}"""
         val status = if (ok) "200 OK" else "404 Not Found"
@@ -65,5 +81,29 @@ class DiagnosticsServer(
             write(bytes)
             flush()
         }
+    }
+
+    /** Reads one request line, bounded — a hostile client must not be able to OOM the app. */
+    private fun readRequestLine(input: InputStream): String? {
+        val sb = StringBuilder()
+        while (sb.length < MAX_REQUEST_LINE) {
+            val c = input.read()
+            if (c == -1) return sb.takeIf { it.isNotEmpty() }?.toString()
+            if (c == '\n'.code) return sb.toString().trimEnd('\r')
+            sb.append(c.toChar())
+        }
+        return null // over the cap: treat as a bad request and close
+    }
+
+    private companion object {
+        /** A stalled client must not wedge the single-threaded accept loop past this. */
+        const val REQUEST_TIMEOUT_MS = 5_000
+
+        /** A hostile client sending an unterminated line must not exhaust memory. */
+        const val MAX_REQUEST_LINE = 8 * 1024
+
+        /** Backoff after a non-stop IOException from accept(), so a persistent
+         *  failure (e.g. descriptor exhaustion) cannot pin a core. */
+        const val ACCEPT_RETRY_DELAY_MS = 100L
     }
 }
