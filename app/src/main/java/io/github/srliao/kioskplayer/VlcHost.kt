@@ -109,8 +109,13 @@ class VlcHost(
 
     fun select(entry: StreamEntry?) = dispatch(Input.StreamSelected(now(), entry))
 
-    fun onNetworkChanged(available: Boolean) =
-        dispatch(Input.NetworkChanged(now(), available))
+    // Delivered from a ConnectivityManager callback, which arrives on a framework
+    // background thread. Hop to the main looper for the same reason the VLC event
+    // listener does: the controller is lock-free and must only ever run on main.
+    fun onNetworkChanged(available: Boolean) {
+        val atMs = now()
+        handler.post { dispatch(Input.NetworkChanged(atMs, available)) }
+    }
 
     fun release() {
         handler.removeCallbacks(tickRunnable)
