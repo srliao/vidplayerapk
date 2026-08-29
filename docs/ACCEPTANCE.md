@@ -22,7 +22,7 @@ Run on a real Fire tablet. Record the build (git SHA) and the date.
 | 16 | Press Receive with Wi-Fi up | Panel shows the tablet's real IP and the `uv run` command | |
 | 17 | Push a stream from a computer while other streams exist | Row appears; playback does **not** switch | |
 | 18 | Push a second stream without re-pressing Receive | Second row appears; status still says "still listening" | |
-| 19 | Fresh install, push the first stream | It starts playing behind the Setup screen (`Kiosk.add`'s `wasEmpty` path) | |
+| 19 | Fresh install, push the first stream | Row appears and becomes the current stream; video starts when you close Setup. | |
 | 20 | Push `http://nope` | Script prints the validator's reason and re-prompts; nothing added | |
 | 21 | Press Cancel, then push again | Connection refused; no socket outlives the panel | |
 | 22 | Reboot after pushing | Pushed streams survive; same persistence as Add | |

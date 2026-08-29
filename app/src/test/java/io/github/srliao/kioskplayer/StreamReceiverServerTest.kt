@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 class StreamReceiverServerTest {
 
     private val received = ArrayBlockingQueue<Pair<String?, String>>(8)
-    private val server = StreamReceiverServer(port = 0) { name, url ->
+    private val server = StreamReceiverServer(port = 0, streamCount = { 0 }) { name, url ->
         received.put(Pair(name, url))
     }
 
@@ -93,6 +93,26 @@ class StreamReceiverServerTest {
             val (status, _) = post(port, """{"url":"rtsps://h/s"}""")
             assertEquals(200, status)
             assertEquals(Pair(null, "rtsps://h/s"), poll())
+        }
+    }
+
+    @Test
+    fun `rejects a push at the cap with 409 and no callback`() {
+        // A separate server whose supplier always reports the list as full -
+        // proves the cap is enforced here, in the socket layer, not in
+        // PushRequest, whose own contract and tests stay untouched.
+        val cappedReceived = ArrayBlockingQueue<Pair<String?, String>>(8)
+        val capped = StreamReceiverServer(port = 0, streamCount = { 64 }) { name, url ->
+            cappedReceived.put(Pair(name, url))
+        }
+        capped.start()
+        try {
+            val (status, body) = post(capped.boundPort, """{"url":"rtsps://h/s"}""")
+            assertEquals(409, status)
+            assertTrue(body.contains("Stream list is full"), body)
+            assertNull(cappedReceived.poll(2, TimeUnit.SECONDS))
+        } finally {
+            capped.stop()
         }
     }
 

@@ -16,9 +16,15 @@ import java.net.Socket
  * only while a person is standing at the Setup screen.
  *
  * [onStream] runs on the server thread. Callers must hop to the main thread.
+ *
+ * [streamCount] must be safe to call from this thread; like DiagnosticsServer's
+ * [DiagnosticsServer.snapshot], it reads a value published by the main thread
+ * (Kiosk.streams is a plain var, unsafe to read from the socket thread) rather
+ * than live controller state.
  */
 class StreamReceiverServer(
     private val port: Int = 8081,
+    private val streamCount: () -> Int,
     private val onStream: (name: String?, url: String) -> Unit,
 ) {
     @Volatile private var running = false
@@ -70,7 +76,17 @@ class StreamReceiverServer(
         socket.soTimeout = REQUEST_TIMEOUT_MS
         val input = socket.getInputStream()
 
-        val requestLine = readLine(input) ?: return
+        val requestLine = try {
+            // A null here with nothing else means the client never sent a byte
+            // (a bare connect, e.g. a port scanner) - there is no request to
+            // answer, so staying silent is correct.
+            readLine(input) ?: return
+        } catch (e: LineTooLongException) {
+            // Unlike the case above, bytes did arrive - a request was begun,
+            // just never finished - so the client gets a 400, not a dropped
+            // connection that pushstream.py would misreport as nothing listening.
+            return write(socket, 400, PushRequest.errorJson("Request line too long"))
+        }
         if (!requestLine.startsWith("POST /add ")) {
             return write(socket, 404, PushRequest.errorJson("Unknown endpoint"))
         }
@@ -81,7 +97,15 @@ class StreamReceiverServer(
             if (++headers > MAX_HEADERS) {
                 return write(socket, 400, PushRequest.errorJson("Too many headers"))
             }
-            val header = readLine(input) ?: return
+            val header = try {
+                // By this point the request line already parsed, so a request is
+                // in flight; any failure here - EOF or an over-cap line - is the
+                // client stopping short mid-headers, not a bare connect, and gets
+                // a 400 for the same reason as above.
+                readLine(input) ?: return write(socket, 400, PushRequest.errorJson("Incomplete request"))
+            } catch (e: LineTooLongException) {
+                return write(socket, 400, PushRequest.errorJson("Header line too long"))
+            }
             if (header.isEmpty()) break
             if (header.substringBefore(':').trim().lowercase() == "content-length") {
                 contentLength = header.substringAfter(':').trim().toIntOrNull() ?: -1
@@ -117,6 +141,12 @@ class StreamReceiverServer(
         when (val result = PushRequest.evaluate(String(body, Charsets.UTF_8))) {
             is PushResult.Rejected -> write(socket, result.status, PushRequest.errorJson(result.reason))
             is PushResult.Accepted -> {
+                // Checked here, not in PushRequest: an unauthenticated endpoint plus an
+                // unbounded list is a loop away from wedging the Setup screen's main
+                // thread (renderList() and StreamStore.save are both O(n) per push).
+                if (streamCount() >= MAX_STREAMS) {
+                    return write(socket, 409, PushRequest.errorJson("Stream list is full"))
+                }
                 onStream(result.name, result.url)
                 write(socket, 200, PushRequest.okJson(result.name))
             }
@@ -153,11 +183,17 @@ class StreamReceiverServer(
     private fun reason(status: Int): String = when (status) {
         200 -> "OK"
         404 -> "Not Found"
+        409 -> "Conflict"
         413 -> "Payload Too Large"
         else -> "Bad Request"
     }
 
-    /** Reads one CRLF-terminated line, bounded - a hostile client must not OOM the app. */
+    /**
+     * Reads one CRLF-terminated line, bounded - a hostile client must not OOM the
+     * app. Returns null only for a clean EOF with nothing read for this line yet;
+     * throws [LineTooLongException] when the line was begun but exceeds the cap
+     * without a terminator, so callers can tell "no request" from "request cut off".
+     */
     private fun readLine(input: InputStream): String? {
         val sb = StringBuilder()
         while (sb.length < MAX_REQUEST_LINE) {
@@ -166,8 +202,11 @@ class StreamReceiverServer(
             if (c == '\n'.code) return sb.toString().trimEnd('\r')
             sb.append(c.toChar())
         }
-        return null
+        throw LineTooLongException()
     }
+
+    /** Signals an over-cap line to [respond], distinct from a clean close. */
+    private class LineTooLongException : Exception()
 
     private companion object {
         const val REQUEST_TIMEOUT_MS = 5_000
@@ -176,5 +215,10 @@ class StreamReceiverServer(
         const val MAX_BODY = 8 * 1024
         const val MAX_DRAIN = 64 * 1024
         const val ACCEPT_RETRY_DELAY_MS = 100L
+
+        // A wall panel shows one camera at a time; 64 rows is already an absurd
+        // Setup screen. The cap exists only to bound the damage an unauthenticated,
+        // looping pusher can do to the main thread and the persisted list.
+        const val MAX_STREAMS = 64
     }
 }
