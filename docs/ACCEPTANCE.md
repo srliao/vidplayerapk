@@ -19,6 +19,13 @@ Run on a real Fire tablet. Record the build (git SHA) and the date.
 | 13 | Open Diag, `curl http://<ip>:8080/stats` | JSON returns; URL is masked | |
 | 14 | Close Diag, curl again | Connection refused | |
 | 15 | Install a newer CI build over an existing one | Installs as an update; stream list survives | |
+| 16 | Press Receive with Wi-Fi up | Panel shows the tablet's real IP and the `uv run` command | |
+| 17 | Push a stream from a computer while other streams exist | Row appears; playback does **not** switch | |
+| 18 | Push a second stream without re-pressing Receive | Second row appears; status still says "still listening" | |
+| 19 | Fresh install, push the first stream | It starts playing behind the Setup screen (`Kiosk.add`'s `wasEmpty` path) | |
+| 20 | Push `http://nope` | Script prints the validator's reason and re-prompts; nothing added | |
+| 21 | Press Cancel, then push again | Connection refused; no socket outlives the panel | |
+| 22 | Reboot after pushing | Pushed streams survive; same persistence as Add | |
 
 **Test 10 is the one that matters.** It is the only test exercising the silent
 stall path, and that is the failure mode that actually occurs in the field. If

@@ -39,6 +39,25 @@ scheme and host are validated; you test a stream by tapping it and watching.
 Unnamed streams show as `<no name>`. Order is the order you added them and never
 changes, so a camera's position stays put.
 
+### Pushing a stream from a computer
+
+Typing a credentialed URL on a Fire keyboard is miserable, and the URL is not
+always on the tablet's clipboard. Press **Receive** on the Setup screen: the
+tablet shows its address and starts listening on port 8081. On a computer on
+the same network:
+
+    uv run tools/pushstream.py --host 192.168.1.42
+
+It prompts for the URL and an optional name — nothing goes through shell
+history — and posts it. The stream is added to the list but playback does not
+switch; tap the row when you want it. The panel keeps listening, so you can
+push several cameras in a row.
+
+The listener runs **only** while the Receive panel is open, and it is
+**unauthenticated**: while the panel is up, anything on the same network that
+finds the port can add a stream. That is a deliberate trade for a home LAN.
+Press **Cancel**, or leave Setup, when you are done.
+
 ### Diagnostics
 
 While the Diag screen is open, the app serves its state on port 8080:
