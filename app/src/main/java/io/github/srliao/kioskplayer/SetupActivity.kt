@@ -3,6 +3,8 @@ package io.github.srliao.kioskplayer
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -13,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import io.github.srliao.kioskplayer.core.UrlCheck
 import io.github.srliao.kioskplayer.core.UrlValidator
+import java.util.concurrent.atomic.AtomicInteger
 
 class SetupActivity : AppCompatActivity() {
 
@@ -22,6 +25,16 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var nameInput: EditText
     private lateinit var urlInput: EditText
     private lateinit var errorLabel: TextView
+    private lateinit var receivePanel: LinearLayout
+    private lateinit var receiveStatus: TextView
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var server: StreamReceiverServer? = null
+
+    // Kiosk.streams is a plain var, unsafe to read from the socket thread. This
+    // is the main-thread-published count StreamReceiverServer's cap check reads
+    // instead, mirroring how DiagnosticsServer reads a published AtomicReference.
+    private val streamCount = AtomicInteger(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +44,30 @@ class SetupActivity : AppCompatActivity() {
         nameInput = findViewById(R.id.input_name)
         urlInput = findViewById(R.id.input_url)
         errorLabel = findViewById(R.id.input_error)
+        receivePanel = findViewById(R.id.receive_panel)
+        receiveStatus = findViewById(R.id.receive_status)
 
         findViewById<Button>(R.id.btn_paste).setOnClickListener { pasteUrl() }
         findViewById<Button>(R.id.btn_add).setOnClickListener { addStream() }
         findViewById<Button>(R.id.btn_close).setOnClickListener { finish() }
+        findViewById<Button>(R.id.btn_receive).setOnClickListener { startReceiving() }
+        findViewById<Button>(R.id.btn_receive_cancel).setOnClickListener { stopReceiving() }
 
         renderList()
+    }
+
+    override fun onPause() {
+        // A kiosk must not hold a listening socket once you have walked away
+        // from this screen.
+        stopReceiving()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        // A push queued right as finish() runs must not touch a dead activity's
+        // views or the kiosk - this also closes the Cancel/accept race.
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     private fun renderList() {
@@ -98,5 +129,49 @@ class SetupActivity : AppCompatActivity() {
     private fun showError(reason: String) {
         errorLabel.text = reason
         errorLabel.visibility = View.VISIBLE
+    }
+
+    private fun startReceiving() {
+        if (server != null) return
+
+        val started = StreamReceiverServer(streamCount = { streamCount.get() }) { name, url ->
+            // The callback arrives on the server thread; every touch of the
+            // stream list and the views has to happen on the main thread.
+            handler.post {
+                kiosk.add(name, url)
+                streamCount.set(kiosk.streams.entries.size)
+                renderList()
+                receiveStatus.text = getString(R.string.receive_added, name ?: "<no name>")
+            }
+        }
+
+        // Published before start() so the accept loop never reads a stale count
+        // from before this Receive session began.
+        streamCount.set(kiosk.streams.entries.size)
+
+        receivePanel.visibility = View.VISIBLE
+        if (runCatching { started.start() }.isFailure) {
+            receiveStatus.text = getString(R.string.receive_failed)
+            return
+        }
+
+        val ip = localIpv4()
+        if (ip == "?") {
+            // The socket binds fine on 0.0.0.0 even with no usable interface, but
+            // telling the user to run `--host ?` is useless - there is nothing to
+            // connect to, so don't leave a listener nobody can reach.
+            started.stop()
+            receiveStatus.text = getString(R.string.receive_no_network)
+            return
+        }
+
+        server = started
+        receiveStatus.text = getString(R.string.receive_waiting, ip)
+    }
+
+    private fun stopReceiving() {
+        server?.stop()
+        server = null
+        receivePanel.visibility = View.GONE
     }
 }

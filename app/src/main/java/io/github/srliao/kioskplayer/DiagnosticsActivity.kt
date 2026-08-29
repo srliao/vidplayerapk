@@ -7,8 +7,6 @@ import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import java.net.Inet4Address
-import java.net.NetworkInterface
 
 class DiagnosticsActivity : AppCompatActivity() {
 
@@ -61,13 +59,4 @@ class DiagnosticsActivity : AppCompatActivity() {
         }
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
-
-    private fun localIpv4(): String =
-        runCatching {
-            NetworkInterface.getNetworkInterfaces().asSequence()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.asSequence() }
-                .filterIsInstance<Inet4Address>()
-                .firstOrNull()?.hostAddress
-        }.getOrNull() ?: "?"
 }

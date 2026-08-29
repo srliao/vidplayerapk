@@ -14,4 +14,10 @@
     <string name="label_streams">Streams</string>
     <string name="label_add_stream">Add stream</string>
     <string name="clipboard_empty">Clipboard is empty</string>
+    <string name="btn_receive">Receive</string>
+    <string name="btn_receive_cancel">Cancel</string>
+    <string name="receive_waiting">Listening on %1$s:8081\nOn the computer:\nuv run tools/pushstream.py --host %1$s</string>
+    <string name="receive_added">Added \"%1$s\" — still listening</string>
+    <string name="receive_failed">Could not open port 8081</string>
+    <string name="receive_no_network">No network address — connect Wi-Fi, then press Receive again</string>
 </resources>

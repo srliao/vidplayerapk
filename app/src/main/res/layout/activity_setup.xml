@@ -53,6 +53,30 @@
         android:textColor="#FFFFFF"
         android:textIsSelectable="true"/>
 
+    <LinearLayout
+        android:id="@+id/receive_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/receive_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#60FF60"
+            android:textSize="16sp"
+            android:typeface="monospace"/>
+
+        <Button
+            android:id="@+id/btn_receive_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_receive_cancel"/>
+    </LinearLayout>
+
     <TextView
         android:id="@+id/input_error"
         android:layout_width="match_parent"
@@ -66,6 +90,12 @@
         android:layout_height="wrap_content"
         android:gravity="end"
         android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_receive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_receive"/>
 
         <Button
             android:id="@+id/btn_paste"
