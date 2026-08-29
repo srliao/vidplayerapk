@@ -3,6 +3,8 @@ package io.github.srliao.kioskplayer
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -22,6 +24,11 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var nameInput: EditText
     private lateinit var urlInput: EditText
     private lateinit var errorLabel: TextView
+    private lateinit var receivePanel: LinearLayout
+    private lateinit var receiveStatus: TextView
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var server: StreamReceiverServer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,12 +38,23 @@ class SetupActivity : AppCompatActivity() {
         nameInput = findViewById(R.id.input_name)
         urlInput = findViewById(R.id.input_url)
         errorLabel = findViewById(R.id.input_error)
+        receivePanel = findViewById(R.id.receive_panel)
+        receiveStatus = findViewById(R.id.receive_status)
 
         findViewById<Button>(R.id.btn_paste).setOnClickListener { pasteUrl() }
         findViewById<Button>(R.id.btn_add).setOnClickListener { addStream() }
         findViewById<Button>(R.id.btn_close).setOnClickListener { finish() }
+        findViewById<Button>(R.id.btn_receive).setOnClickListener { startReceiving() }
+        findViewById<Button>(R.id.btn_receive_cancel).setOnClickListener { stopReceiving() }
 
         renderList()
+    }
+
+    override fun onPause() {
+        // A kiosk must not hold a listening socket once you have walked away
+        // from this screen.
+        stopReceiving()
+        super.onPause()
     }
 
     private fun renderList() {
@@ -98,5 +116,33 @@ class SetupActivity : AppCompatActivity() {
     private fun showError(reason: String) {
         errorLabel.text = reason
         errorLabel.visibility = View.VISIBLE
+    }
+
+    private fun startReceiving() {
+        if (server != null) return
+
+        val started = StreamReceiverServer { name, url ->
+            // The callback arrives on the server thread; every touch of the
+            // stream list and the views has to happen on the main thread.
+            handler.post {
+                kiosk.add(name, url)
+                renderList()
+                receiveStatus.text = getString(R.string.receive_added, name ?: "<no name>")
+            }
+        }
+
+        receivePanel.visibility = View.VISIBLE
+        if (runCatching { started.start() }.isFailure) {
+            receiveStatus.text = getString(R.string.receive_failed)
+            return
+        }
+        server = started
+        receiveStatus.text = getString(R.string.receive_waiting, localIpv4())
+    }
+
+    private fun stopReceiving() {
+        server?.stop()
+        server = null
+        receivePanel.visibility = View.GONE
     }
 }
